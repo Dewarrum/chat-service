@@ -1,0 +1,110 @@
+﻿@page "/channels/{ChannelId:guid}/messages"
+@using Application.Channels
+@using Application.Messages
+@using Application.Users
+@using Infrastructure.Notifications
+@using Microsoft.AspNetCore.Components.Authorization
+@using Microsoft.AspNetCore.SignalR.Client
+@inject IChannelsService ChannelsService
+@inject IMessagesService MessagesService
+@inject IUsersService UsersService
+@inject NavigationManager Navigation
+@rendermode InteractiveServer
+@implements IAsyncDisposable
+<InitializeTimeZone />
+
+<PageTitle>Messages</PageTitle>
+
+@if (messages == null)
+{
+    <p>
+        <em>Loading...</em>
+    </p>
+}
+else
+{
+    <div class="overflow-y-auto h-100 d-flex flex-column gap-4 p-4">
+        <h2>Channel @channel?.Name</h2>
+        <ul class="list-group flex-column-reverse overflow-y-auto border">
+            @foreach (var message in messages)
+            {
+                <li class="list-group-item">
+                    <div class="d-flex flex-row">
+                        <div class="flex-grow-1 d-flex flex-column">
+                            <LocalTime DateTime="message.CreatedAt" />
+                            <span>@message.Text</span>
+                        </div>
+                        <span>@message.UserDisplayName (@message.UserEmail)</span>
+                    </div>
+                </li>
+            }
+        </ul>
+        <div class="height-128 border position-relative p-0">
+            <input placeholder="Write a message..." @bind="messageText" class="w-100 h-100 px-3 py-2"/>
+            <button class="btn btn-primary position-absolute top-0 end-0 mt-1 me-1" type="button" @onclick="SendMessage">Send</button>
+        </div>
+    </div>
+}
+
+@code {
+
+    private HubConnection? hubConnection;
+    private IReadOnlyList<MessageModel>? messages;
+    private ChannelModel? channel;
+    private string? messageText;
+
+    [Parameter] public Guid ChannelId { get; set; }
+    [CascadingParameter] public Task<AuthenticationState>? AuthenticationState { get; set; }
+
+    protected override async Task OnInitializedAsync()
+    {
+        messages = await MessagesService.GetMessages(ChannelId);
+        channel = await ChannelsService.Get(ChannelId);
+        hubConnection = new HubConnectionBuilder()
+            .WithUrl(Navigation.ToAbsoluteUri("/chat"))
+            .Build();
+
+        hubConnection.On<NewMessageNotification>(
+            "NotifyNewMessage",
+            async _ => { await ReloadMessages(); });
+
+        await hubConnection.StartAsync();
+        await hubConnection.SendAsync("JoinChannel", ChannelId);
+    }
+
+    private async Task SendMessage(MouseEventArgs e)
+    {
+        if (string.IsNullOrWhiteSpace(messageText))
+            return;
+
+        if (AuthenticationState is null)
+            return;
+
+        var authState = await AuthenticationState;
+        var providerId = authState.User.Claims.FirstOrDefault(c => c.Type == "sub")?.Value;
+        if (string.IsNullOrWhiteSpace(providerId))
+            return;
+
+        var user = await UsersService.Get(providerId);
+
+        var message = new CreateMessageRequest(ChannelId, user.Id, messageText);
+        await MessagesService.CreateMessage(message);
+        messageText = "";
+    }
+
+    private async Task ReloadMessages()
+    {
+        messages = await MessagesService.GetMessages(ChannelId);
+        StateHasChanged();
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        if (hubConnection is not null)
+        {
+            await hubConnection.SendAsync("LeaveChannel", ChannelId);
+            await hubConnection.DisposeAsync();
+        }
+    }
+
+}

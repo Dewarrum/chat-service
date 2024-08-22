@@ -1,0 +1,40 @@
+﻿@page "/channels/create"
+@using Application.Channels
+@using Microsoft.AspNetCore.Components.Authorization
+@inject IChannelsService ChannelsService
+@inject NavigationManager NavigationManager
+@rendermode InteractiveServer
+
+<PageTitle>Create Channel</PageTitle>
+
+<h2>Create Channel</h2>
+
+<form @onsubmit="OnSubmit">
+    <div class="mb-3">
+        <label for="channelName" class="form-label">Channel Name</label>
+        <input id="channelName" type="text" class="form-control" @bind="channelName" required />
+    </div>
+    <button type="submit" class="btn btn-primary">Create</button>
+</form>
+
+@code {
+
+    private string? channelName;
+    [CascadingParameter] public Task<AuthenticationState>? AuthenticationState { get; set; }
+
+    private async Task OnSubmit()
+    {
+        if (string.IsNullOrWhiteSpace(channelName))
+            return;
+
+        if (AuthenticationState is null)
+            return;
+
+        var channel = new CreateChannelRequest(channelName);
+        await ChannelsService.Create(channel);
+        channelName = "";
+        
+        NavigationManager.NavigateTo("/");
+    }
+
+}

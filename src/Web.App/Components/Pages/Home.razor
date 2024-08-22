@@ -1,0 +1,39 @@
+﻿@page "/"
+@using Application.Channels
+@inject IChannelsService ChannelsService
+
+
+<PageTitle>Home</PageTitle>
+
+@if (channels == null)
+{
+    <p>
+        <em>Loading...</em>
+    </p>
+}
+else
+{
+    <h2>Select a channel</h2>
+    <NavLink href="/channels/create">Create a new channel</NavLink>
+    <ul class="list-group">
+        @foreach (var channel in channels)
+        {
+            <li class="list-group-item">
+                <a href="@($"/channels/{channel.Id}/messages")" class="text-decoration-none">
+                    <div>@channel.Name</div>
+                </a>
+            </li>
+        }
+    </ul>
+}
+
+@code {
+
+    private IReadOnlyList<ChannelModel>? channels;
+
+    protected override async Task OnInitializedAsync()
+    {
+        channels = await ChannelsService.GetAll();
+    }
+
+}
